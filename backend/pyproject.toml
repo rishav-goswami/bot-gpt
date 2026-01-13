@@ -6,7 +6,7 @@ authors = [
     {name = "Rishav Anand",email = "77602579+rishav-goswami@users.noreply.github.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<4.0.0"
 dependencies = [
     "fastapi (>=0.128.0,<0.129.0)",
     "uvicorn[standard] (>=0.40.0,<0.41.0)",
@@ -18,7 +18,11 @@ dependencies = [
     "pgvector (>=0.4.2,<0.5.0)",
     "celery (>=5.6.2,<6.0.0)",
     "redis (>=7.1.0,<8.0.0)",
-    "python-socketio (>=5.16.0,<6.0.0)"
+    "python-socketio (>=5.16.0,<6.0.0)",
+    "langchain-openai (>=1.1.7,<2.0.0)",
+    "langchain-google-genai (>=4.1.3,<5.0.0)",
+    "langchain-groq (>=1.1.1,<2.0.0)",
+    "langchain-ollama (>=1.0.1,<2.0.0)"
 ]
 
 

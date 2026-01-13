@@ -3,6 +3,7 @@ from uuid import UUID
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict
+from app.schemas.document import DocumentResponse
 
 
 # --- Enums (Matching DB) ---
@@ -64,7 +65,6 @@ class ConversationDetail(ConversationSummary):
     """Full view for the chat window (includes messages)"""
 
     messages: List[MessageResponse] = []
-    # We will add documents here too so the UI knows what context is loaded
-    # documents: List[DocumentResponse] = [] (We'll add this after defining Document schema)
+    documents: List[DocumentResponse] = []
 
     model_config = ConfigDict(from_attributes=True)

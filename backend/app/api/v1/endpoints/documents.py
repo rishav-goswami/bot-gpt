@@ -8,7 +8,7 @@ from app.workers.tasks import ingest_pdf_task
 
 from app.api import deps
 from app.schemas import document as schemas
-from app import crud
+from app.crud import document as crud
 
 router = APIRouter()
 

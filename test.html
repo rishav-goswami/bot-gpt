@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BotGPT Debug Client</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+        .chat-scroll {
+            scrollbar-width: thin;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-900 text-gray-100 h-screen flex overflow-hidden font-sans">
+
+    <aside class="w-1/4 bg-gray-800 border-r border-gray-700 flex flex-col">
+        <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+            <h1 class="font-bold text-xl text-blue-400">BotGPT</h1>
+            <button onclick="createConversation()"
+                class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-sm">+ New</button>
+        </div>
+        <div id="conversation-list" class="flex-1 overflow-y-auto p-2 space-y-2">
+            <div class="text-gray-500 text-center mt-10">Loading chats...</div>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col relative">
+        <header class="bg-gray-800 p-4 border-b border-gray-700 flex justify-between items-center z-10">
+            <h2 id="current-chat-title" class="font-semibold">Select a conversation</h2>
+
+            <div class="flex items-center gap-2">
+                <form id="upload-form" class="flex items-center gap-2 hidden">
+                    <input type="file" name="file" id="pdf-file" accept=".pdf"
+                        class="text-sm text-gray-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-gray-700 file:text-blue-400 hover:file:bg-gray-600">
+                    <button type="submit"
+                        class="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-sm">Upload PDF</button>
+                </form>
+                <span id="socket-status" class="w-3 h-3 rounded-full bg-red-500" title="Socket Disconnected"></span>
+            </div>
+        </header>
+
+        <div id="messages-container" class="flex-1 overflow-y-auto p-6 space-y-4 chat-scroll bg-gray-900">
+            <div class="text-center text-gray-600 mt-20">
+                Create or select a chat to begin.
+            </div>
+        </div>
+
+        <div class="p-4 bg-gray-800 border-t border-gray-700">
+            <form id="chat-form" class="flex gap-2">
+                <input type="text" id="message-input" placeholder="Type a message..." disabled
+                    class="flex-1 bg-gray-700 border border-gray-600 rounded px-4 py-2 focus:outline-none focus:border-blue-500 text-white">
+                <button type="submit" id="send-btn" disabled
+                    class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                    Send
+                </button>
+            </form>
+        </div>
+    </main>
+
+    <script>
+        const API_URL = "http://localhost:8000/api/v1";
+        const SOCKET_URL = "http://localhost:8000";
+
+        let currentChatId = null;
+        let socket = null;
+
+        // --- 1. Initialize Socket.IO ---
+        function initSocket() {
+            socket = io(SOCKET_URL, {
+                path: "/socket.io/",
+                transports: ["websocket"]
+            });
+
+            socket.on("connect", () => {
+                document.getElementById("socket-status").className = "w-3 h-3 rounded-full bg-green-500";
+                document.getElementById("socket-status").title = "Connected";
+                console.log("🟢 Socket Connected:", socket.id);
+            });
+
+            socket.on("disconnect", () => {
+                document.getElementById("socket-status").className = "w-3 h-3 rounded-full bg-red-500";
+                console.log("🔴 Socket Disconnected");
+            });
+
+            // Listen for Real-time Messages
+            socket.on("new_message", (data) => {
+                console.log("📩 Socket Event (new_message):", data);
+                if (data.conversation_id === currentChatId) {
+                    appendMessage(data.role, data.content, false); // false = don't scroll hard if reading
+                }
+            });
+
+            // Listen for RAG Processing
+            socket.on("doc_processed", (data) => {
+                console.log("📄 Doc Processed:", data);
+                alert(`PDF Processed! ${data.chunks} chunks indexed. Cached: ${data.cached || false}`);
+            });
+        }
+
+        // --- 2. API Calls ---
+
+        async function fetchConversations() {
+            const res = await fetch(`${API_URL}/conversations/`);
+            const chats = await res.json();
+            const list = document.getElementById("conversation-list");
+            list.innerHTML = "";
+
+            chats.forEach(chat => {
+                const div = document.createElement("div");
+                div.className = "p-3 rounded cursor-pointer hover:bg-gray-700 transition";
+                div.innerHTML = `
+                    <div class="font-medium truncate text-white">${chat.title || "Untitled Chat"}</div>
+                    <div class="text-xs text-gray-500">${new Date(chat.updated_at).toLocaleString()}</div>
+                `;
+                div.onclick = () => loadChat(chat.id, chat.title);
+                list.appendChild(div);
+            });
+        }
+
+        async function createConversation() {
+            const firstMsg = prompt("Enter first message to start chat:");
+            if (!firstMsg) return;
+
+            const res = await fetch(`${API_URL}/conversations/`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ first_message: firstMsg })
+            });
+
+            if (res.ok) {
+                fetchConversations(); // Refresh list
+                const chat = await res.json();
+                loadChat(chat.id, chat.title); // Auto open
+            }
+        }
+
+        async function loadChat(chatId, title) {
+            currentChatId = chatId;
+            document.getElementById("current-chat-title").innerText = title || "Chat";
+            document.getElementById("upload-form").classList.remove("hidden");
+            document.getElementById("message-input").disabled = false;
+            document.getElementById("send-btn").disabled = false;
+
+            // Join Socket Room
+            socket.emit("join_conversation", { conversation_id: chatId });
+
+            // Fetch History
+            const res = await fetch(`${API_URL}/conversations/${chatId}`);
+            const data = await res.json();
+
+            const container = document.getElementById("messages-container");
+            container.innerHTML = "";
+
+            // Render History
+            data.messages.forEach(msg => appendMessage(msg.role, msg.content, true));
+
+            // Show Attached Docs
+            if (data.documents && data.documents.length > 0) {
+                const docAlert = document.createElement("div");
+                docAlert.className = "text-xs bg-gray-800 border border-blue-900 text-blue-300 p-2 rounded mb-4";
+                docAlert.innerText = `📚 Loaded Context: ${data.documents.map(d => d.filename).join(", ")}`;
+                container.appendChild(docAlert);
+            }
+        }
+
+        // --- 3. Interaction Logic ---
+
+        function appendMessage(role, content, isHistory) {
+            const container = document.getElementById("messages-container");
+            const div = document.createElement("div");
+            const isUser = role === "user";
+
+            div.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
+            div.innerHTML = `
+                <div class="max-w-[80%] rounded-lg p-3 ${isUser ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-200'}">
+                    <div class="text-xs opacity-50 mb-1 font-bold uppercase">${role}</div>
+                    <div class="whitespace-pre-wrap">${content}</div>
+                </div>
+            `;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        document.getElementById("chat-form").onsubmit = async (e) => {
+            e.preventDefault();
+            const input = document.getElementById("message-input");
+            const content = input.value.trim();
+            if (!content || !currentChatId) return;
+
+            input.value = "";
+
+            // Optimistic UI: Don't append manually, let the socket event do it!
+            // This proves the real-time loop is working.
+
+            await fetch(`${API_URL}/conversations/${currentChatId}/messages`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ content, role: "user" })
+            });
+        };
+
+        // RAG Upload Handler
+        document.getElementById("upload-form").onsubmit = async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById("pdf-file");
+            if (!fileInput.files[0]) return;
+
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+            formData.append("conversation_id", currentChatId);
+
+            const btn = e.target.querySelector("button");
+            const originalText = btn.innerText;
+            btn.innerText = "Uploading...";
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${API_URL}/documents/`, {
+                    method: "POST",
+                    body: formData
+                });
+                if (res.ok) {
+                    alert("Upload successful! Processing has started in the background...");
+                } else {
+                    const err = await res.json();
+                    alert("Upload failed: " + err.detail);
+                }
+            } catch (err) {
+                console.error(err);
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+                fileInput.value = "";
+            }
+        };
+
+        // Start
+        initSocket();
+        fetchConversations();
+
+    </script>
+</body>
+
+</html>

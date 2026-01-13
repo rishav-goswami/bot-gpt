@@ -28,6 +28,7 @@ dependencies = [
     "langgraph (>=1.0.6,<2.0.0)",
     "tiktoken (>=0.12.0,<0.13.0)",
     "python-multipart (>=0.0.21,<0.0.22)",
+    "pymupdf (>=1.26.7,<2.0.0)",
 ]
 
 

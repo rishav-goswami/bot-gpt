@@ -17,8 +17,7 @@ class MessageRole(str, Enum):
 class MessageBase(BaseModel):
     role: MessageRole
     content: str
-    metadata_: Optional[Dict[str, Any]] = Field(default=None, alias="metadata")
-
+    metadata_: Optional[Dict[str, Any]] = Field(default=None, serialization_alias="metadata")
 
 # --- Message Schemas ---
 class MessageCreate(BaseModel):

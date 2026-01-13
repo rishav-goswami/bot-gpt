@@ -5,7 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 
 # LangChain Imports
-from langchain_community.document_loaders import PyPDFLoader
+# from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -89,7 +90,7 @@ class RAGService:
 
         # 3. Cache Miss: Process normally
         print("🆕 New File. Generating Embeddings...")
-        loader = PyPDFLoader(file_path)
+        loader = PyMuPDFLoader(file_path)
         pages = loader.load()
 
         text_splitter = RecursiveCharacterTextSplitter(

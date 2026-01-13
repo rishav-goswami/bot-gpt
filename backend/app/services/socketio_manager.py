@@ -36,7 +36,7 @@ class SocketManager:
         """
         room = data.get("conversation_id")
         if room:
-            self.server.enter_room(sid, room)
+            await self.server.enter_room(sid, room)
             await self.server.emit("room_joined", {"room": room}, room=sid)
             print(f"SID {sid} joined room {room}")
 

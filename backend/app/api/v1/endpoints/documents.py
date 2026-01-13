@@ -1,10 +1,10 @@
-# File: app/api/v1/endpoints/documents.py
 import shutil
 import os
 from typing import Any, List
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.workers.tasks import ingest_pdf_task
 
 from app.api import deps
 from app import schemas
@@ -15,11 +15,12 @@ router = APIRouter()
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+
 @router.post("/", response_model=schemas.DocumentResponse, status_code=201)
 async def upload_document(
-    conversation_id: UUID = Form(...), # Passed as form data
+    conversation_id: UUID = Form(...),  # Passed as form data
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(deps.get_db)
+    db: AsyncSession = Depends(deps.get_db),
 ) -> Any:
     """
     Upload a PDF, save to disk, and link to conversation.
@@ -39,20 +40,20 @@ async def upload_document(
         filename=file.filename,
         file_path=file_path,
         conversation_id=conversation_id,
-        content_snippet="Processing..." # Placeholder until worker runs
+        content_snippet="Processing...",  # Placeholder until worker runs
     )
     doc = await crud.document.create(db=db, obj_in=doc_in)
 
     # 4. Trigger Background Task (Celery)
-    # In production: ingest_pdf_task.delay(str(doc.id))
+    ingest_pdf_task.delay(str(doc.id), file_path, str(conversation_id))
     print(f"Triggered ingestion for doc {doc.id} at {file_path}")
-    
+
     return doc
+
 
 @router.get("/{conversation_id}", response_model=List[schemas.DocumentResponse])
 async def list_documents(
-    conversation_id: UUID,
-    db: AsyncSession = Depends(deps.get_db)
+    conversation_id: UUID, db: AsyncSession = Depends(deps.get_db)
 ) -> Any:
     """List all documents attached to a conversation."""
     return await crud.document.get_by_conversation(db, conversation_id)

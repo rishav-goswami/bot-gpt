@@ -25,3 +25,6 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             yield session
         finally:
             await session.close()
+
+
+# TODO: have to run this for the first time to enable extension,  CREATE EXTENSION IF NOT EXISTS vector;

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.workers.tasks import ingest_pdf_task
 
 from app.api import deps
-from app import schemas
+from app.schemas import document as schemas
 from app import crud
 
 router = APIRouter()

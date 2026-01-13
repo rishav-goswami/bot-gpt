@@ -3,10 +3,10 @@ name = "bot-gpt-backend"
 version = "0.1.0"
 description = "Conversational AI backend with RAG capabilities using FastAPI, LangChain, and OpenAI."
 authors = [
-    {name = "Rishav Anand",email = "77602579+rishav-goswami@users.noreply.github.com"}
+    { name = "Rishav Anand", email = "77602579+rishav-goswami@users.noreply.github.com" },
 ]
 readme = "README.md"
-requires-python = ">=3.13,<4.0.0"
+requires-python = ">=3.11,<4.0.0"
 dependencies = [
     "fastapi (>=0.128.0,<0.129.0)",
     "uvicorn[standard] (>=0.40.0,<0.41.0)",
@@ -26,7 +26,8 @@ dependencies = [
     "langchain (>=1.2.3,<2.0.0)",
     "langchain-community (>=0.4.1,<0.5.0)",
     "langgraph (>=1.0.6,<2.0.0)",
-    "tiktoken (>=0.12.0,<0.13.0)"
+    "tiktoken (>=0.12.0,<0.13.0)",
+    "python-multipart (>=0.0.21,<0.0.22)",
 ]
 
 
@@ -38,5 +39,5 @@ build-backend = "poetry.core.masonry.api"
 dev = [
     "pytest (>=9.0.2,<10.0.0)",
     "pytest-asyncio (>=1.3.0,<2.0.0)",
-    "httpx (>=0.28.1,<0.29.0)"
+    "httpx (>=0.28.1,<0.29.0)",
 ]

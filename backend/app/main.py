@@ -9,28 +9,30 @@ from sqlalchemy import text
 
 
 from app.core.config import settings
-from app.core.database import engine, Base
-# from app.api.v1.api import api_router # TODO: will add this when I implement more routes
+from app.core.database import engine
+from app.db.base import Base
+from app.api.api import api_router
 from app.middlewares.logging import RequestLoggingMiddleware
 from app.services.socketio_manager import sio
 
 
-# --- 1. Lifespan Manager (Startup & Shutdown) ---
-# This replaces the old 'on_startup' list. It's cleaner for Async DBs.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Create Tables (if not using Alembic for migrations)
-    # In production, you typically use Alembic, but for this assessment, this ensures tables exist.
+    # Startup Logic
     async with engine.begin() as conn:
-        # await conn.run_sync(Base.metadata.drop_all) # Uncomment to reset DB on restart
+        # 1. Enable pgvector extension (Crucial Fix)
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        
+        # 2. Create Tables
+        # await conn.run_sync(Base.metadata.drop_all) #  if needed to reset schema
         await conn.run_sync(Base.metadata.create_all)
-
-    print("✅ Database tables created (if they didn't exist).")
+    
+    print("✅ Database tables created & pgvector enabled.")
     print("🚀 System is ready to accept connections.")
-
-    yield  # App runs here
-
-    # Shutdown: Close DB connections (Async engine handles this mostly, but good practice)
+    
+    yield # App runs here
+    
+    # Shutdown Logic
     await engine.dispose()
     print("🛑 Database connection closed.")
 
@@ -62,7 +64,7 @@ app.add_middleware(
 )
 
 # --- 4. Routers ---
-# app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
 app.mount("/socket.io", sio.app) # Mount Socket.IO ASGI app
 

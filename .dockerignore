@@ -1,0 +1,28 @@
+# .dockerignore
+.git
+.gitignore
+.env
+*.md
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Jupyter
+.ipynb_checkpoints
+
+# Frontend
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+frontend/.next/
+
+.ai-help-chats/

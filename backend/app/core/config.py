@@ -13,6 +13,13 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "BOT GPT"
     API_V1_STR: str = "/api/v1"
 
+    DEBUG: bool = True
+    BACKEND_CORS_ORIGINS: Optional[list[str]] = [
+        "http://localhost",
+        "http://localhost:3000",
+        "http://localhost:8000",
+    ]
+
     # Database
     DATABASE_URL: str
 
@@ -53,6 +60,8 @@ class Settings(BaseSettings):
     # RAG Settings
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     VECTOR_DIMENSION: int = 1536
+
+    LOG_LEVEL: str = "INFO"
 
 
 settings = Settings()

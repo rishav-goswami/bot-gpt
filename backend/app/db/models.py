@@ -119,7 +119,8 @@ class Document(Base):
     embedding: Mapped[Optional[List[float]]] = mapped_column(
         Vector(1536), nullable=True
     )
-
+    # Using compare hash to avoid duplicate uploads
+    file_hash: Mapped[Optional[str]] = mapped_column(String(32), index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

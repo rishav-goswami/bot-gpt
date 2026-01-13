@@ -7,11 +7,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-# Import Config & Database
+
 from app.core.config import settings
 from app.core.database import engine, Base
 # from app.api.v1.api import api_router # TODO: will add this when I implement more routes
 from app.middlewares.logging import RequestLoggingMiddleware
+from app.services.socketio_manager import sio
 
 
 # --- 1. Lifespan Manager (Startup & Shutdown) ---
@@ -63,7 +64,7 @@ app.add_middleware(
 # --- 4. Routers ---
 # app.include_router(api_router, prefix=settings.API_V1_STR)
 
-
+app.mount("/socket.io", sio.app) # Mount Socket.IO ASGI app
 
 @app.get("/")
 async def read_root():

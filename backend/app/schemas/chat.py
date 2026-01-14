@@ -44,7 +44,8 @@ class ChatCreate(BaseModel):
 
     first_message: str = Field(..., min_length=1, example="Hello, how does RAG work?")
     # Optional: Attach a document ID immediately if 'Chat with PDF'
-    document_id: Optional[UUID] = None
+    # document_id: Optional[UUID] = None
+    doc_ids: Optional[List[UUID]] = None
 
 
 class ConversationBase(BaseModel):

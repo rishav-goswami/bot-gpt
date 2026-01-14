@@ -103,7 +103,7 @@ async def create_conversation(
         )
 
     # 3. Generate AI Reply
-    await run_chat_graph(db, new_chat, chat_in.first_message, chat_in.doc_ids)
+    await run_chat_graph(db, new_chat, chat_in.first_message, doc_ids=chat_in.doc_ids)
 
     return new_chat
 

@@ -60,3 +60,16 @@ An asynchronous, event-driven chatbot capability of "Chatting with PDFs". Built 
 │   └── workers/      # Celery Tasks
 ├── docker-compose.yml
 └── Dockerfile
+```
+
+## Testing
+
+1. Open a shell in your API container:
+```sh
+docker exec -it botgpt_api /bin/bash
+```
+
+2. Run the tests:
+```sh
+python -m pytest app/tests/test_api.py -v
+```

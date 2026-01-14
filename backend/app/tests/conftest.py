@@ -2,13 +2,15 @@ import pytest
 import pytest_asyncio
 import asyncio
 import uuid
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
 from httpx import AsyncClient, ASGITransport
 
 from app.main import app
 from app.core.config import settings
 from app.db.models import User
+from app.db.base import Base
 from app.api.deps import get_current_user
 
 # 1. Define Static User Data
@@ -27,38 +29,92 @@ def event_loop():
     loop.close()
 
 
-# 3. Database Engine & Session
+# 3. Database Setup (Create tables once per session)
 @pytest_asyncio.fixture(scope="function")
-async def db_session():
-    # Create engine per test to ensure isolation
-    engine = create_async_engine(settings.ASYNC_DATABASE_URL)
-    async_session = async_sessionmaker(bind=engine, expire_on_commit=False)
-
-    async with async_session() as session:
-        yield session
-
+async def db_engine():
+    """Create a test database engine and set up tables."""
+    engine = create_async_engine(
+        settings.ASYNC_DATABASE_URL,
+        echo=False,  # Set to True for SQL debugging
+        pool_pre_ping=True,
+    )
+    
+    # Create tables and enable pgvector
+    async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.run_sync(Base.metadata.create_all)
+    
+    yield engine
+    
+    # Cleanup: Drop all tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    
     await engine.dispose()
 
 
-# 4. Seed User (Robust Logic)
-@pytest_asyncio.fixture(scope="function", autouse=True)
-async def seed_user(db_session):
-    """
-    Ensures the test user exists. Handles 'Already Exists' errors gracefully.
-    """
+# 4. Database Session
+@pytest_asyncio.fixture(scope="function")
+async def db_session(db_engine):
+    """Create a database session for each test."""
+    async_session = async_sessionmaker(
+        bind=db_engine, 
+        expire_on_commit=False,
+        class_=AsyncSession
+    )
+    
+    session = async_session()
+    try:
+        yield session
+    finally:
+        # Clean up: rollback any uncommitted changes and close
+        try:
+            await session.rollback()
+        except Exception:
+            pass
+        try:
+            await session.close()
+        except Exception:
+            pass
+
+
+# 5. Override Database Dependency (includes user seeding)
+@pytest_asyncio.fixture(scope="function")
+async def override_get_db(db_session):
+    """Override the get_db dependency to use test database and seed user."""
+    # Seed user when database is used
     try:
         # Try to insert
         user = User(id=TEST_USER_ID, email=TEST_USER_EMAIL)
         db_session.add(user)
         await db_session.commit()
+        await db_session.refresh(user)
     except IntegrityError:
         # If user exists, rollback and ignore (it's fine)
         await db_session.rollback()
+        # Try to get existing user
+        from sqlalchemy import select
+        result = await db_session.execute(select(User).where(User.id == TEST_USER_ID))
+        user = result.scalars().first()
+        if not user:
+            # If still not found, try again
+            user = User(id=TEST_USER_ID, email=TEST_USER_EMAIL)
+            db_session.add(user)
+            await db_session.commit()
+    
+    async def _get_db():
+        yield db_session
+    
+    from app.api.deps import get_db
+    app.dependency_overrides[get_db] = _get_db
+    yield
+    app.dependency_overrides.pop(get_db, None)
 
 
-# 5. HTTP Client & Auth Override
+# 7. HTTP Client & Auth Override
 @pytest_asyncio.fixture(scope="function")
-async def client():
+async def client(override_get_db):
+    """Create an async HTTP client for testing."""
     async def mock_get_current_user():
         return User(id=TEST_USER_ID, email=TEST_USER_EMAIL)
 
@@ -69,4 +125,5 @@ async def client():
     ) as ac:
         yield ac
 
-    app.dependency_overrides = {}
+    # Cleanup
+    app.dependency_overrides.pop(get_current_user, None)

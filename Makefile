@@ -1,5 +1,5 @@
 
-.PHONY: up down logs clean shell
+.PHONY: up down logs clean shell test
 
 up:
 	docker compose up -d --build
@@ -16,3 +16,6 @@ clean:
 
 shell:
 	docker exec -it botgpt_api /bin/bash
+
+test:
+	docker exec botgpt_api poetry run pytest app/tests/test_api.py -v

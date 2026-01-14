@@ -97,16 +97,24 @@ class CRUDChat:
         await db.refresh(db_msg)
         return db_msg
 
-    async def delete(self, db: AsyncSession, conversation_id: UUID) -> None:
+    async def delete_conversation(self, db: AsyncSession, conversation_id: UUID, user_id: UUID) -> bool:
         """
-        Delete a conversation (Cascades to messages due to DB foreign keys).
+        Deletes a conversation only if it belongs to the specific user.
+        Returns True if deleted, False if not found.
         """
-        query = select(Conversation).where(Conversation.id == conversation_id)
-        result = await db.execute(query)
-        obj = result.scalars().first()
-        if obj:
-            await db.delete(obj)
-            await db.commit()
+        stmt = select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user_id
+        )
+        result = await db.execute(stmt)
+        chat = result.scalars().first()
+
+        if not chat:
+            return False
+
+        await db.delete(chat)
+        await db.commit()
+        return True
 
 
 chat = CRUDChat()

@@ -12,16 +12,16 @@ from app.llm_client import llm_client
 from app.services.socketio_manager import sio
 from app.services.rag_service import rag_service
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from app.services.llm_graph import app_graph 
+from app.services.llm_graph import app_graph
 
 router = APIRouter()
 
 
 async def run_chat_graph(
-    db: AsyncSession, 
-    chat: Conversation, 
+    db: AsyncSession,
+    chat: Conversation,
     user_content: str,
-    doc_ids: Optional[List[UUID]] = None
+    doc_ids: Optional[List[UUID]] = None,
 ) -> Message:
     """
     Executes the LangGraph workflow.
@@ -35,7 +35,7 @@ async def run_chat_graph(
             lc_messages.append(HumanMessage(content=m.content))
         elif m.role == MessageRole.ASSISTANT:
             lc_messages.append(AIMessage(content=m.content))
-    
+
     # Add current user message if not already there
     if not lc_messages or lc_messages[-1].content != user_content:
         lc_messages.append(HumanMessage(content=user_content))
@@ -46,20 +46,22 @@ async def run_chat_graph(
         "messages": lc_messages,
         "user_query": user_content,
         "chat_id": chat.id,
-        "db_session": db, # Passing DB session into graph state
+        "db_session": db,  # Passing DB session into graph state
         "context": "",
         "has_documents": False,
-        "doc_ids": doc_ids
+        "doc_ids": doc_ids,
     }
-    
+
     result = await app_graph.ainvoke(inputs)
-    
+
     # 3. Extract AI Response
     # The graph returns the updated state. The last message is the AI's response.
     ai_response_content = result["messages"][-1].content
 
     # 4. Save to DB
-    ai_msg_in = schemas.MessageCreate(content=ai_response_content, role=MessageRole.ASSISTANT)
+    ai_msg_in = schemas.MessageCreate(
+        content=ai_response_content, role=MessageRole.ASSISTANT
+    )
     ai_msg = await crud.chat.create_message(
         db, conversation_id=chat.id, obj_in=ai_msg_in, role=MessageRole.ASSISTANT
     )
@@ -70,8 +72,9 @@ async def run_chat_graph(
         event="new_message",
         data=schemas.MessageResponse.model_validate(ai_msg).model_dump(mode="json"),
     )
-    
+
     return ai_msg
+
 
 # --- ENDPOINTS ---
 
@@ -161,9 +164,21 @@ async def send_message(
 
 @router.delete("/{chat_id}", status_code=204)
 async def delete_conversation(
-    chat_id: UUID, db: AsyncSession = Depends(deps.get_db)
+    chat_id: UUID,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user),
 ) -> None:
-    chat = await crud.chat.get(db, conversation_id=chat_id)
-    if not chat:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    await crud.chat.delete(db, conversation_id=chat_id)
+    """
+    Delete a conversation and all associated messages.
+    """
+    success = await crud.chat.delete_conversation(
+        db=db, conversation_id=chat_id, user_id=current_user.id
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found or you do not have permission.",
+        )
+
+    return None

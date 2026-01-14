@@ -12,106 +12,64 @@ from app.llm_client import llm_client
 from app.services.socketio_manager import sio
 from app.services.rag_service import rag_service
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from app.services.llm_graph import app_graph 
 
 router = APIRouter()
 
 
-# --- HELPER: Reusable LLM Generation Logic ---
-async def generate_and_save_ai_response(
-    db: AsyncSession, chat: Conversation, user_content: str
+async def run_chat_graph(
+    db: AsyncSession, 
+    chat: Conversation, 
+    user_content: str
 ) -> Message:
     """
-    Core Logic: RAG Search -> Context Injection -> LLM Call -> Save -> Emit
+    Executes the LangGraph workflow.
     """
-    chat_id = chat.id
-
-    # 1. RAG Retrieval (Vector Search)
-    retrieved_context = ""
-    # We check if docs exist.
-    if chat.documents:
-        print(f"🔎 Performing HNSW Vector Search for: {user_content}")
-        # Embed query
-        query_vector = rag_service.embeddings.embed_query(user_content)
-        # Search
-        stmt = (
-            select(Document)
-            .where(Document.conversation_id == chat_id)
-            .order_by(Document.embedding.cosine_distance(query_vector))
-            .limit(3)
-        )
-        result = await db.execute(stmt)
-        docs = result.scalars().all()
-
-        if docs:
-            context_text = "\n\n---\n".join([d.content_snippet for d in docs])
-            retrieved_context = (
-                f"CONTEXT FROM UPLOADED DOCUMENTS:\n{context_text}\n---\n"
-            )
-    system_instruction = (
-        "You are a specialized RAG Assistant. "
-        "Use the provided 'CONTEXT' to answer the user's question. "
-        "If the answer is not in the context, say 'I cannot find that information in the documents.' "
-        "Do not hallucinate or use outside knowledge. "
-        "Keep answers concise and professional."
-    )
-    # 2. Build Context (Sliding Window)
-    # We take the last 10 messages from the chat object
-    system_prompt = SystemMessage(content=system_instruction)
-
-    # Ensure we are working with a list
+    # 1. Prepare LangChain formatted messages (History)
+    # Sliding window: last 10
     recent_msgs = chat.messages[-10:] if chat.messages else []
-
-    history_messages = [system_prompt]
+    lc_messages = []
     for m in recent_msgs:
         if m.role == MessageRole.USER:
-            history_messages.append(HumanMessage(content=m.content))
+            lc_messages.append(HumanMessage(content=m.content))
         elif m.role == MessageRole.ASSISTANT:
-            history_messages.append(AIMessage(content=m.content))
+            lc_messages.append(AIMessage(content=m.content))
+    
+    # Add current user message if not already there
+    if not lc_messages or lc_messages[-1].content != user_content:
+        lc_messages.append(HumanMessage(content=user_content))
 
-    # Inject Context into the specific user message in history
-    # If the last message in history matches our current input, augment it.
-    if (
-        history_messages
-        and isinstance(history_messages[-1], HumanMessage)
-        and history_messages[-1].content == user_content
-    ):
-        if retrieved_context:
-            history_messages[-1].content = (
-                f"{retrieved_context}\n\nUSER QUESTION: {user_content}"
-            )
-    else:
-        # Fallback: Append it if it wasn't found in the slice (e.g. very long history)
-        full_content = (
-            f"{retrieved_context}\n\nUSER QUESTION: {user_content}"
-            if retrieved_context
-            else user_content
-        )
-        history_messages.append(HumanMessage(content=full_content))
+    # 2. Invoke Graph
+    print(f"🚀 Invoking LangGraph for Chat {chat.id}")
+    inputs = {
+        "messages": lc_messages,
+        "user_query": user_content,
+        "chat_id": chat.id,
+        "db_session": db, # Passing DB session into graph state
+        "context": "",
+        "has_documents": False
+    }
+    
+    result = await app_graph.ainvoke(inputs)
+    
+    # 3. Extract AI Response
+    # The graph returns the updated state. The last message is the AI's response.
+    ai_response_content = result["messages"][-1].content
 
-    # 3. Call LLM
-    try:
-        llm = llm_client.get_llm()
-        ai_response = llm.invoke(history_messages)
-        ai_text = ai_response.content
-    except Exception as e:
-        print(f"❌ LLM Error: {e}")
-        ai_text = "I'm sorry, I'm having trouble connecting to my brain right now."
-
-    # 4. Save Assistant Response
-    ai_msg_in = schemas.MessageCreate(content=ai_text, role=MessageRole.ASSISTANT)
+    # 4. Save to DB
+    ai_msg_in = schemas.MessageCreate(content=ai_response_content, role=MessageRole.ASSISTANT)
     ai_msg = await crud.chat.create_message(
-        db, conversation_id=chat_id, obj_in=ai_msg_in, role=MessageRole.ASSISTANT
+        db, conversation_id=chat.id, obj_in=ai_msg_in, role=MessageRole.ASSISTANT
     )
 
     # 5. Emit to Socket
     await sio.emit_to_room(
-        room=str(chat_id),
+        room=str(chat.id),
         event="new_message",
         data=schemas.MessageResponse.model_validate(ai_msg).model_dump(mode="json"),
     )
-
+    
     return ai_msg
-
 
 # --- ENDPOINTS ---
 
@@ -140,7 +98,7 @@ async def create_conversation(
         )
 
     # 3. Generate AI Reply
-    await generate_and_save_ai_response(db, new_chat, chat_in.first_message)
+    await run_chat_graph(db, new_chat, chat_in.first_message)
 
     return new_chat
 
@@ -194,7 +152,7 @@ async def send_message(
     chat.messages.append(user_msg)
 
     # 4. Generate AI Reply using the helper
-    ai_msg = await generate_and_save_ai_response(db, chat, msg_in.content)
+    ai_msg = await run_chat_graph(db, chat, msg_in.content)
 
     return ai_msg
 

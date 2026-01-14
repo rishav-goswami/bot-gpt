@@ -47,13 +47,16 @@ async def generate_and_save_ai_response(
             retrieved_context = (
                 f"CONTEXT FROM UPLOADED DOCUMENTS:\n{context_text}\n---\n"
             )
-
+    system_instruction = (
+        "You are a specialized RAG Assistant. "
+        "Use the provided 'CONTEXT' to answer the user's question. "
+        "If the answer is not in the context, say 'I cannot find that information in the documents.' "
+        "Do not hallucinate or use outside knowledge. "
+        "Keep answers concise and professional."
+    )
     # 2. Build Context (Sliding Window)
     # We take the last 10 messages from the chat object
-    system_prompt = SystemMessage(
-        content="You are a helpful AI assistant for Bot Consulting. "
-        "If context is provided, answer based ONLY on that context."
-    )
+    system_prompt = SystemMessage(content=system_instruction)
 
     # Ensure we are working with a list
     recent_msgs = chat.messages[-10:] if chat.messages else []

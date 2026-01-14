@@ -1,33 +1,63 @@
 import asyncio
-from uuid import UUID
-from app.core.celery_app import celery_app
+import socketio
+from celery import shared_task
+from sqlalchemy.ext.asyncio import (
+    create_async_engine,
+    async_sessionmaker,
+)
+from app.core.config import settings
 from app.services.rag_service import rag_service
 
 
-# Helper to run async code in sync Celery worker
-def run_async(coroutine):
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(coroutine)
-
-
-@celery_app.task(name="ingest_pdf")
-def ingest_pdf_task(doc_id_str: str, file_path: str, conversation_id_str: str):
+# Helper to send notifications from a Worker
+async def notify_frontend(chat_id: str, data: dict):
     """
-    Celery task to ingest a PDF.
-    Wraps the async RAGService logic.
+    Creates a temporary, write-only connection to Redis to emit the event.
+    This is safe to run inside the Worker's unique event loop.
     """
-    doc_id = UUID(doc_id_str)
-    conversation_id = UUID(conversation_id_str)
+    try:
+        # Connect to the SAME Redis that the API uses
+        mgr = socketio.AsyncRedisManager(settings.REDIS_URL, write_only=True)
+        tmp_server = socketio.AsyncServer(client_manager=mgr)
 
-    # We create a new event loop for this thread to run the async DB/LLM logic
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+        # Emit the event
+        await tmp_server.emit("doc_processed", data, room=chat_id)
+
+        # Clean up connection
+        # await mgr.close()
+    except Exception as e:
+        print(f"⚠️ Notification Failed: {e}")
+
+
+async def run_ingest(doc_id, file_path, conversation_id):
+    # 1. Create a FRESH Engine & Session for this specific loop
+    # We cannot use the global 'engine' from core.database because it belongs to the wrong loop.
+    local_engine = create_async_engine(settings.ASYNC_DATABASE_URL)
+    LocalSession = async_sessionmaker(bind=local_engine, expire_on_commit=False)
 
     try:
-        loop.run_until_complete(
-            rag_service.process_document(doc_id, file_path, conversation_id)
-        )
+        async with LocalSession() as session:
+            # 2. Pass this fresh session to the service
+            stats = await rag_service.process_document(
+                doc_id, file_path, conversation_id, db=session
+            )
+
+            # 3. Send Notification
+            await notify_frontend(str(conversation_id), stats)
+
+    finally:
+        # 4. Cleanup the engine
+        await local_engine.dispose()
+
+
+@shared_task(name="ingest_pdf")
+def ingest_pdf_task(doc_id_str, file_path, conversation_id_str):
+    """
+    Wrapper to run async code in sync Celery worker.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(run_ingest(doc_id_str, file_path, conversation_id_str))
     finally:
         loop.close()
-
-    return f"Processed {file_path}"

@@ -23,30 +23,21 @@ The system follows a **Microservices-ready, Event-Driven Architecture**.
 
 ```mermaid
 graph TD
-    %% Clients
-    Client([Client / Frontend]) -->|HTTP REST| API[FastAPI Server]
-    Client -->|Socket.IO| API
-
-    %% Core Services
-    subgraph "Application Layer"
-        API -->|Read/Write| DB[(PostgreSQL + pgvector)]
-        API -->|Publish Task| Redis[Redis Broker]
-        API -->|Trace| LangSmith[LangSmith Observability]
-    end
-
-    %% Async Workers
+    Client[Client / Frontend] -->|HTTP/WebSocket| API[FastAPI Server]
+    API -->|Read/Write| DB[(PostgreSQL + pgvector)]
+    API -->|Publish Task| Redis[Redis Broker]
+    
     subgraph "Async Worker Layer"
         Worker[Celery Worker]
         Redis -->|Consume Task| Worker
-        Worker -->|Read PDF| Storage[File Storage (Local/S3)]
+        Worker -->|Update Status| Redis
         Worker -->|Save Vectors| DB
     end
-
-    %% AI Logic
-    subgraph "AI Orchestration"
-        API -->|Invoke| LangGraph[LangGraph Agent]
+    
+    subgraph "AI Logic Layer"
+        API -->|Invoke Graph| LangGraph[LangGraph Agent]
         LangGraph -->|Retrieve Context| DB
-        LangGraph -->|Generate| OpenAI[OpenAI API]
+        LangGraph -->|Generate Answer| OpenAI[OpenAI API]
     end
 
 ```

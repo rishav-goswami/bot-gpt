@@ -45,7 +45,17 @@ class RAGService:
             for chunk in iter(lambda: f.read(4096), b""):
                 hash_md5.update(chunk)
         file_hash = hash_md5.hexdigest()
-
+        
+        # 1.5 Check if file exists in THIS conversation
+        stmt_check = select(Document).where(
+            Document.conversation_id == conversation_id,
+            Document.file_hash == file_hash
+        ).limit(1)
+        res_check = await db.execute(stmt_check)
+        if res_check.scalars().first():
+             print(f"⚠️ File {file_path} already exists in conversation {conversation_id}. Skipping.")
+             return {"status": "exists", "chunks": 0, "cached": True}
+        
         # 2. Check for Global Deduplication (using passed 'db')
         stmt = select(Document).where(Document.file_hash == file_hash).limit(1)
         result = await db.execute(stmt)

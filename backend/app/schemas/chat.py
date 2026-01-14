@@ -27,6 +27,7 @@ class MessageCreate(BaseModel):
     # Role is usually 'user' by default in the API endpoint logic,
     # but we allow it here if needed (e.g. for system prompts).
     role: MessageRole = MessageRole.USER
+    doc_ids: Optional[List[UUID]] = None
 
 
 class MessageResponse(MessageBase):

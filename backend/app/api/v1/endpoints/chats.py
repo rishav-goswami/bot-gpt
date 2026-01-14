@@ -20,7 +20,8 @@ router = APIRouter()
 async def run_chat_graph(
     db: AsyncSession, 
     chat: Conversation, 
-    user_content: str
+    user_content: str,
+    doc_ids: Optional[List[UUID]] = None
 ) -> Message:
     """
     Executes the LangGraph workflow.
@@ -47,7 +48,8 @@ async def run_chat_graph(
         "chat_id": chat.id,
         "db_session": db, # Passing DB session into graph state
         "context": "",
-        "has_documents": False
+        "has_documents": False,
+        "doc_ids": doc_ids
     }
     
     result = await app_graph.ainvoke(inputs)
@@ -98,7 +100,7 @@ async def create_conversation(
         )
 
     # 3. Generate AI Reply
-    await run_chat_graph(db, new_chat, chat_in.first_message)
+    await run_chat_graph(db, new_chat, chat_in.first_message, chat_in.doc_ids)
 
     return new_chat
 

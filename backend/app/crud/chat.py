@@ -44,14 +44,14 @@ class CRUDChat:
         self, db: AsyncSession, conversation_id: UUID
     ) -> Optional[Conversation]:
         """
-        Get a single conversation with all its messages and documents.
+        Get a single conversation with all its messages.
+        Note: Documents are loaded separately via get_by_conversation to filter chunks.
         """
         query = (
             select(Conversation)
             .where(Conversation.id == conversation_id)
             .options(
                 selectinload(Conversation.messages),
-                selectinload(Conversation.documents),
             )
         )
         result = await db.execute(query)

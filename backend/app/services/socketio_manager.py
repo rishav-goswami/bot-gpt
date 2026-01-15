@@ -6,7 +6,9 @@ from app.core.config import settings
 class SocketManager:
     def __init__(self):
         # Redis Manager allows this to scale across multiple workers/containers
-        mgr = socketio.AsyncRedisManager(settings.REDIS_URL)
+        redis_url = settings.REDIS_URL_RESOLVED
+        print(f"🔗 SocketManager using Redis URL: {redis_url}")
+        mgr = socketio.AsyncRedisManager(redis_url)
 
         # Async Server
         self.server = socketio.AsyncServer(

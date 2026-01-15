@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://redis:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"
     REDIS_URL: Optional[str] = None
+    
+    @computed_field
+    @property
+    def REDIS_URL_RESOLVED(self) -> str:
+        """Resolve REDIS_URL with fallback to CELERY_BROKER_URL"""
+        return self.REDIS_URL or self.CELERY_BROKER_URL
 
     # LLM Settings
     LLM_PROVIDER: str = "groq"  # default to groq for speed/free

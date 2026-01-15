@@ -85,6 +85,10 @@ async def create_conversation(
     db: AsyncSession = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user),
 ) -> Any:
+    from app.crud import document as crud_doc
+    from app.schemas.chat import ConversationDetail, MessageResponse
+    from app.schemas.document import DocumentResponse
+    
     # 1. Create Conversation & Save First User Message
     new_chat = await crud.chat.create_conversation(
         db=db, user_id=current_user.id, obj_in=chat_in
@@ -104,8 +108,22 @@ async def create_conversation(
 
     # 3. Generate AI Reply
     await run_chat_graph(db, new_chat, chat_in.first_message, doc_ids=chat_in.doc_ids)
-
-    return new_chat
+    
+    # 4. Reload chat to get updated messages
+    new_chat = await crud.chat.get(db, conversation_id=new_chat.id)
+    
+    # 5. Load filtered documents (only originals, not chunks)
+    original_docs = await crud_doc.document.get_by_conversation(db, new_chat.id)
+    
+    # 6. Manually construct the response to avoid lazy loading issues
+    return ConversationDetail(
+        id=new_chat.id,
+        title=new_chat.title,
+        created_at=new_chat.created_at,
+        updated_at=new_chat.updated_at,
+        messages=[MessageResponse.model_validate(msg) for msg in new_chat.messages],
+        documents=[DocumentResponse.model_validate(doc) for doc in original_docs],
+    )
 
 
 @router.get("/", response_model=List[schemas.ConversationSummary])
@@ -124,10 +142,26 @@ async def list_conversations(
 async def get_conversation(
     chat_id: UUID, db: AsyncSession = Depends(deps.get_db)
 ) -> Any:
+    from app.crud import document as crud_doc
+    from app.schemas.chat import ConversationDetail, MessageResponse
+    from app.schemas.document import DocumentResponse
+    
     chat = await crud.chat.get(db, conversation_id=chat_id)
     if not chat:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    return chat
+    
+    # Load filtered documents (only originals, not chunks)
+    original_docs = await crud_doc.document.get_by_conversation(db, chat_id)
+    
+    # Manually construct the response to avoid lazy loading issues
+    return ConversationDetail(
+        id=chat.id,
+        title=chat.title,
+        created_at=chat.created_at,
+        updated_at=chat.updated_at,
+        messages=[MessageResponse.model_validate(msg) for msg in chat.messages],
+        documents=[DocumentResponse.model_validate(doc) for doc in original_docs],
+    )
 
 
 @router.post("/{chat_id}/messages", response_model=schemas.MessageResponse)

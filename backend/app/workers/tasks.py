@@ -16,17 +16,32 @@ async def notify_frontend(chat_id: str, data: dict):
     This is safe to run inside the Worker's unique event loop.
     """
     try:
+        print(f"📡 Attempting to notify frontend for conversation {chat_id} with data: {data}")
         # Connect to the SAME Redis that the API uses
-        mgr = socketio.AsyncRedisManager(settings.REDIS_URL, write_only=True)
-        tmp_server = socketio.AsyncServer(client_manager=mgr)
+        redis_url = settings.REDIS_URL_RESOLVED
+        if not redis_url:
+            print("⚠️ REDIS_URL not set, cannot send notification")
+            return
+        
+        print(f"🔗 Using Redis URL: {redis_url}")
+        mgr = socketio.AsyncRedisManager(redis_url, write_only=True)
+        tmp_server = socketio.AsyncServer(
+            async_mode="asgi",
+            client_manager=mgr,
+            cors_allowed_origins="*"
+        )
 
-        # Emit the event
-        await tmp_server.emit("doc_processed", data, room=chat_id)
+        # Emit the event to the room (conversation_id)
+        print(f"📤 Emitting doc_processed to room: {chat_id}")
+        await tmp_server.emit("doc_processed", data, room=str(chat_id))
+        print(f"✅ Successfully emitted doc_processed event to room {chat_id}")
 
         # Clean up connection
         # await mgr.close()
     except Exception as e:
         print(f"⚠️ Notification Failed: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 async def run_ingest(doc_id, file_path, conversation_id):
@@ -42,8 +57,11 @@ async def run_ingest(doc_id, file_path, conversation_id):
                 doc_id, file_path, conversation_id, db=session
             )
 
-            # 3. Send Notification
+            # 3. Send Notification with doc_id
+            stats["doc_id"] = str(doc_id)
+            print(f"📢 Emitting doc_processed event for doc {doc_id} in conversation {conversation_id}")
             await notify_frontend(str(conversation_id), stats)
+            print(f"✅ Notification sent: {stats}")
 
     finally:
         # 4. Cleanup the engine

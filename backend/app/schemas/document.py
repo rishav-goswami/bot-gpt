@@ -26,5 +26,10 @@ class DocumentResponse(DocumentBase):
     content_snippet: Optional[str] = Field(
         default=None, description="First 100 chars preview"
     )
+    
+    # Include embedding status (null means not processed yet)
+    embedding: Optional[List[float]] = Field(
+        default=None, description="Vector embedding (null if not processed)"
+    )
 
     model_config = ConfigDict(from_attributes=True)

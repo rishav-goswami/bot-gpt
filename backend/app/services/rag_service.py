@@ -85,6 +85,12 @@ class RAGService:
                 db.add(new_chunk)
                 new_chunks.append(new_chunk)
 
+            # Update original document status
+            original_doc = await db.get(Document, doc_id)
+            if original_doc:
+                original_doc.content_snippet = f"Processed ({len(new_chunks)} chunks)"
+                original_doc.file_hash = file_hash  # Ensure file_hash is set
+            
             await db.commit()
             print(f"✅ Copied {len(new_chunks)} chunks from cache.")
 
@@ -115,6 +121,12 @@ class RAGService:
             )
             db.add(chunk_doc)
 
+        # Update original document status
+        original_doc = await db.get(Document, doc_id)
+        if original_doc:
+            original_doc.content_snippet = f"Processed ({len(chunks)} chunks)"
+            original_doc.file_hash = file_hash  # Ensure file_hash is set
+        
         await db.commit()
         print("✅ Embeddings saved to Postgres.")
 

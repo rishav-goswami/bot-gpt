@@ -10,6 +10,7 @@ class SocketService {
     }
 
     this.socket = io(SOCKET_URL, {
+      path: "/socket.io/",
       transports: ["websocket"],
       reconnection: true,
       reconnectionDelay: 1000,
@@ -59,6 +60,24 @@ class SocketService {
   offMessage(callback: (data: any) => void): void {
     if (this.socket) {
       this.socket.off("new_message", callback);
+    }
+  }
+
+  onDocumentProcessed(callback: (data: any) => void): void {
+    if (this.socket) {
+      console.log("🎧 Registering doc_processed listener");
+      this.socket.on("doc_processed", (data) => {
+        console.log("📨 Raw doc_processed event received:", data);
+        callback(data);
+      });
+    } else {
+      console.warn("⚠️ Cannot register doc_processed listener: socket not connected");
+    }
+  }
+
+  offDocumentProcessed(callback: (data: any) => void): void {
+    if (this.socket) {
+      this.socket.off("doc_processed", callback);
     }
   }
 

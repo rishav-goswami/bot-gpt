@@ -20,6 +20,7 @@ export interface Document {
   file_path: string;
   content_snippet?: string;
   created_at: string;
+  embedding?: number[] | null; // null means still processing
 }
 
 export interface Conversation {

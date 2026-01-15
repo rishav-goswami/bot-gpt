@@ -33,18 +33,45 @@
 
             <div class="flex items-center gap-2">
                 <form id="upload-form" class="flex items-center gap-2 hidden">
-                    <input type="file" name="file" id="pdf-file" accept=".pdf"
+                    <input type="file" name="file" id="pdf-file" accept=".pdf" multiple
                         class="text-sm text-gray-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-gray-700 file:text-blue-400 hover:file:bg-gray-600">
                     <button type="submit"
-                        class="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-sm">Upload PDF</button>
+                        class="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-sm">Upload PDF(s)</button>
                 </form>
                 <span id="socket-status" class="w-3 h-3 rounded-full bg-red-500" title="Socket Disconnected"></span>
             </div>
         </header>
 
+        <!-- Documents Panel -->
+        <div id="documents-panel" class="bg-gray-850 border-b border-gray-700 p-3 hidden">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-semibold text-gray-300">📚 Documents in this conversation:</span>
+                <button onclick="toggleDocumentSelection()" id="toggle-doc-select" 
+                    class="text-xs bg-gray-700 hover:bg-gray-600 text-blue-400 px-2 py-1 rounded">
+                    Select for Grounding
+                </button>
+            </div>
+            <div id="documents-list" class="flex flex-wrap gap-2">
+                <div class="text-xs text-gray-500">No documents uploaded yet.</div>
+            </div>
+        </div>
+
         <div id="messages-container" class="flex-1 overflow-y-auto p-6 space-y-4 chat-scroll bg-gray-900">
             <div class="text-center text-gray-600 mt-20">
                 Create or select a chat to begin.
+            </div>
+        </div>
+
+        <!-- Selected Documents Indicator -->
+        <div id="selected-docs-indicator" class="bg-blue-900 border-t border-blue-700 px-4 py-2 hidden">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-semibold text-blue-300">🎯 Grounding with selected documents:</span>
+                    <span id="selected-docs-count" class="text-xs text-blue-200">0</span>
+                </div>
+                <button onclick="clearDocumentSelection()" class="text-xs text-blue-300 hover:text-blue-200">
+                    Clear Selection
+                </button>
             </div>
         </div>
 
@@ -66,6 +93,8 @@
 
         let currentChatId = null;
         let socket = null;
+        let availableDocuments = []; // Store documents for current conversation
+        let selectedDocIds = new Set(); // Track selected document IDs for grounding
 
         // --- 1. Initialize Socket.IO ---
         function initSocket() {
@@ -89,7 +118,7 @@
             socket.on("new_message", (data) => {
                 console.log("📩 Socket Event (new_message):", data);
                 if (data.conversation_id === currentChatId) {
-                    appendMessage(data.role, data.content, false); // false = don't scroll hard if reading
+                    appendMessage(data.role, data.content, false);
                 }
             });
 
@@ -97,6 +126,10 @@
             socket.on("doc_processed", (data) => {
                 console.log("📄 Doc Processed:", data);
                 alert(`PDF Processed! ${data.chunks} chunks indexed. Cached: ${data.cached || false}`);
+                // Refresh documents list after processing
+                if (currentChatId) {
+                    loadDocuments(currentChatId);
+                }
             });
         }
 
@@ -139,10 +172,14 @@
 
         async function loadChat(chatId, title) {
             currentChatId = chatId;
+            selectedDocIds.clear(); // Clear selection when switching chats
+            updateSelectedDocsIndicator();
+            
             document.getElementById("current-chat-title").innerText = title || "Chat";
             document.getElementById("upload-form").classList.remove("hidden");
             document.getElementById("message-input").disabled = false;
             document.getElementById("send-btn").disabled = false;
+            document.getElementById("documents-panel").classList.remove("hidden");
 
             // Join Socket Room
             socket.emit("join_conversation", { conversation_id: chatId });
@@ -157,12 +194,95 @@
             // Render History
             data.messages.forEach(msg => appendMessage(msg.role, msg.content, true));
 
-            // Show Attached Docs
-            if (data.documents && data.documents.length > 0) {
-                const docAlert = document.createElement("div");
-                docAlert.className = "text-xs bg-gray-800 border border-blue-900 text-blue-300 p-2 rounded mb-4";
-                docAlert.innerText = `📚 Loaded Context: ${data.documents.map(d => d.filename).join(", ")}`;
-                container.appendChild(docAlert);
+            // Load and display documents
+            await loadDocuments(chatId);
+        }
+
+        async function loadDocuments(conversationId) {
+            try {
+                const res = await fetch(`${API_URL}/documents/${conversationId}`);
+                const docs = await res.json();
+                availableDocuments = docs;
+                renderDocumentsList(docs);
+            } catch (err) {
+                console.error("Failed to load documents:", err);
+            }
+        }
+
+        function renderDocumentsList(docs) {
+            const container = document.getElementById("documents-list");
+            container.innerHTML = "";
+
+            if (docs.length === 0) {
+                container.innerHTML = '<div class="text-xs text-gray-500">No documents uploaded yet.</div>';
+                return;
+            }
+
+            docs.forEach(doc => {
+                const docDiv = document.createElement("div");
+                const isSelected = selectedDocIds.has(doc.id);
+                docDiv.className = `px-3 py-1 rounded text-xs cursor-pointer transition ${
+                    isSelected 
+                        ? 'bg-blue-600 text-white border border-blue-400' 
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
+                }`;
+                docDiv.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" ${isSelected ? 'checked' : ''} 
+                            onchange="toggleDocumentSelection('${doc.id}')" 
+                            class="doc-checkbox hidden">
+                        <span>📄 ${doc.filename}</span>
+                        ${isSelected ? '<span class="text-blue-200">✓</span>' : ''}
+                    </div>
+                `;
+                docDiv.onclick = () => toggleDocumentSelection(doc.id);
+                container.appendChild(docDiv);
+            });
+        }
+
+        function toggleDocumentSelection(docId = null) {
+            const isSelectionMode = document.getElementById("toggle-doc-select").textContent === "Cancel Selection";
+            
+            if (docId) {
+                // Toggle specific document
+                if (selectedDocIds.has(docId)) {
+                    selectedDocIds.delete(docId);
+                } else {
+                    selectedDocIds.add(docId);
+                }
+                renderDocumentsList(availableDocuments);
+                updateSelectedDocsIndicator();
+            } else {
+                // Toggle selection mode
+                if (isSelectionMode) {
+                    // Cancel selection mode - clear all selections
+                    selectedDocIds.clear();
+                    document.getElementById("toggle-doc-select").textContent = "Select for Grounding";
+                } else {
+                    // Enter selection mode
+                    document.getElementById("toggle-doc-select").textContent = "Cancel Selection";
+                }
+                renderDocumentsList(availableDocuments);
+                updateSelectedDocsIndicator();
+            }
+        }
+
+        function clearDocumentSelection() {
+            selectedDocIds.clear();
+            document.getElementById("toggle-doc-select").textContent = "Select for Grounding";
+            renderDocumentsList(availableDocuments);
+            updateSelectedDocsIndicator();
+        }
+
+        function updateSelectedDocsIndicator() {
+            const indicator = document.getElementById("selected-docs-indicator");
+            const countSpan = document.getElementById("selected-docs-count");
+            
+            if (selectedDocIds.size > 0) {
+                indicator.classList.remove("hidden");
+                countSpan.textContent = `${selectedDocIds.size} document(s)`;
+            } else {
+                indicator.classList.add("hidden");
             }
         }
 
@@ -181,7 +301,9 @@
                 </div>
             `;
             container.appendChild(div);
-            container.scrollTop = container.scrollHeight;
+            if (!isHistory) {
+                container.scrollTop = container.scrollHeight;
+            }
         }
 
         document.getElementById("chat-form").onsubmit = async (e) => {
@@ -192,48 +314,77 @@
 
             input.value = "";
 
-            // Optimistic UI: Don't append manually, let the socket event do it!
-            // This proves the real-time loop is working.
+            // Prepare message payload with selected document IDs if any
+            const payload = {
+                content,
+                role: "user"
+            };
+
+            // Add doc_ids if documents are selected for grounding
+            if (selectedDocIds.size > 0) {
+                payload.doc_ids = Array.from(selectedDocIds);
+            }
 
             await fetch(`${API_URL}/conversations/${currentChatId}/messages`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ content, role: "user" })
+                body: JSON.stringify(payload)
             });
+
+            // Clear selection after sending (optional - you can keep it if you want)
+            // selectedDocIds.clear();
+            // updateSelectedDocsIndicator();
         };
 
-        // RAG Upload Handler
+        // RAG Upload Handler - Support Multiple Files
         document.getElementById("upload-form").onsubmit = async (e) => {
             e.preventDefault();
             const fileInput = document.getElementById("pdf-file");
-            if (!fileInput.files[0]) return;
-
-            const formData = new FormData();
-            formData.append("file", fileInput.files[0]);
-            formData.append("conversation_id", currentChatId);
+            const files = Array.from(fileInput.files);
+            
+            if (files.length === 0) return;
 
             const btn = e.target.querySelector("button");
             const originalText = btn.innerText;
-            btn.innerText = "Uploading...";
             btn.disabled = true;
 
-            try {
-                const res = await fetch(`${API_URL}/documents/`, {
-                    method: "POST",
-                    body: formData
-                });
-                if (res.ok) {
-                    alert("Upload successful! Processing has started in the background...");
-                } else {
-                    const err = await res.json();
-                    alert("Upload failed: " + err.detail);
+            // Upload files one by one
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                btn.innerText = `Uploading ${i + 1}/${files.length}...`;
+
+                const formData = new FormData();
+                formData.append("file", file);
+                formData.append("conversation_id", currentChatId);
+
+                try {
+                    const res = await fetch(`${API_URL}/documents/`, {
+                        method: "POST",
+                        body: formData
+                    });
+                    
+                    if (res.ok) {
+                        const doc = await res.json();
+                        console.log(`✅ Uploaded: ${file.name} (ID: ${doc.id})`);
+                        
+                        // Refresh documents list after each upload
+                        await loadDocuments(currentChatId);
+                    } else {
+                        const err = await res.json();
+                        alert(`Upload failed for ${file.name}: ${err.detail}`);
+                    }
+                } catch (err) {
+                    console.error(`Error uploading ${file.name}:`, err);
+                    alert(`Error uploading ${file.name}`);
                 }
-            } catch (err) {
-                console.error(err);
-            } finally {
-                btn.innerText = originalText;
-                btn.disabled = false;
-                fileInput.value = "";
+            }
+
+            btn.innerText = originalText;
+            btn.disabled = false;
+            fileInput.value = "";
+            
+            if (files.length > 0) {
+                alert(`Upload complete! ${files.length} file(s) are being processed in the background.`);
             }
         };
 

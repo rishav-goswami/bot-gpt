@@ -22,7 +22,7 @@ COPY pyproject.toml poetry.lock* ./
 RUN poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-ansi --no-root
 
-# 5. Copy Application Code
+# 5. Copy Application Code (exclude .venv, __pycache__, etc. via .dockerignore)
 COPY . .
 
 # 6. Default Command (Can be overridden by docker-compose)

@@ -156,8 +156,8 @@ async def send_message(
     # We append the new message to the loaded object so the LLM sees it in history
     chat.messages.append(user_msg)
 
-    # 4. Generate AI Reply using the helper
-    ai_msg = await run_chat_graph(db, chat, msg_in.content)
+    # 4. Generate AI Reply using the helper (pass doc_ids if provided)
+    ai_msg = await run_chat_graph(db, chat, msg_in.content, doc_ids=msg_in.doc_ids)
 
     return ai_msg
 

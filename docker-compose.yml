@@ -45,6 +45,7 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
       DATABASE_URL: postgresql://app_user:app_password@db:5432/botgpt_db
+      REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
     depends_on:
       - db

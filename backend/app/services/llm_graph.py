@@ -23,7 +23,7 @@ class GraphState(TypedDict):
     db_session: AsyncSession  # We pass the DB session through the graph
     context: str
     has_documents: bool
-    doc_ids: Optional[List[UUID]]
+    doc_ids: Optional[List[str]]  # this is file_hash list to filter retrieval
 
 
 # --- 2. Define Nodes ---
@@ -47,35 +47,89 @@ async def check_documents(state: GraphState):
 
 async def retrieve(state: GraphState):
     """
-    Node 2: Retrieve relevant chunks from Postgres (HNSW).
+    Node 2: Retrieve relevant chunks from Postgres (HNSW) and format with Metadata.
     """
     print("🤖 Graph Node: Retrieving Context...")
+
     query = state["user_query"]
     db = state["db_session"]
     chat_id = state["chat_id"]
+    filter_hashes = state.get("doc_ids", None)
 
-    
-    filter_ids = state.get(
-        "doc_ids", None
-    )  # You need to add doc_ids to GraphState TypedDict
+    # --- [DEBUG START] for Demo Purposes ---
+    # This block proves your filtering logic works during the presentation
+    count_stmt = select(Document).where(
+        Document.conversation_id == chat_id, Document.embedding.isnot(None)
+    )
+    count_result = await db.execute(count_stmt)
+    total_chunks = len(count_result.scalars().all())
+    print(f"🔍 [DEBUG] Total chunks available in this chat: {total_chunks}")
+    # --- [DEBUG END] ---
 
-    # 1. Embed
+    # 1. Embed the User Query
     query_vector = rag_service.embeddings.embed_query(query)
 
-    # 2. Search
-    stmt = select(Document).where(Document.conversation_id == chat_id)
+    # 2. Build the Base Query
+    stmt = select(Document).where(
+        Document.conversation_id == chat_id,
+        Document.embedding.isnot(None),
+    )
 
-    # Apply Filter
-    if filter_ids:
-        print(f"🎯 Filtering search to {len(filter_ids)} documents.")
-        stmt = stmt.where(Document.id.in_(filter_ids))
+    # 3. Apply Filters (Select-to-Talk)
+    if filter_hashes:
+        print(f"🎯 [FILTER] Restricting search to file hashes: {filter_hashes}")
 
+        # [DEBUG] Verify if these hashes actually exist in the DB
+        check_stmt = (
+            select(Document.id)
+            .where(
+                Document.conversation_id == chat_id,
+                Document.file_hash.in_(filter_hashes),
+            )
+            .limit(1)
+        )
+        check_res = await db.execute(check_stmt)
+        if not check_res.scalars().first():
+            print(
+                f"⚠️ [WARNING] The requested file hashes {filter_hashes} were NOT found in this chat's context!"
+            )
+
+        stmt = stmt.where(Document.file_hash.in_(filter_hashes))
+
+    # 4. Vector Search
     stmt = stmt.order_by(Document.embedding.cosine_distance(query_vector)).limit(4)
 
+    # 5. Execute
     result = await db.execute(stmt)
     docs = result.scalars().all()
 
-    context_text = "\n\n".join([d.content_snippet for d in docs]) if docs else ""
+    # 6. Format Context with Metadata for Citations
+    formatted_chunks = []
+
+    if not docs:
+        print("⚠️ No relevant documents found.")
+        return {"context": ""}
+
+    for doc in docs:
+        # Handle Legacy Data
+        meta = doc.doc_metadata if doc.doc_metadata else {}
+
+        source_file = meta.get("source", doc.filename)
+        page_num = meta.get("page_number", "N/A")
+
+        # XML-style block for high precision
+        chunk_block = (
+            f"<document source='{source_file}' page='{page_num}'>\n"
+            f"{doc.content_snippet}\n"
+            f"</document>"
+        )
+        formatted_chunks.append(chunk_block)
+
+    context_text = "\n\n".join(formatted_chunks)
+
+    print(f"📚 Retrieved {len(docs)} chunks.")
+    print(f"📄 Context preview: {context_text[:200]}...")
+
     return {"context": context_text}
 
 
@@ -85,16 +139,29 @@ async def generate_rag(state: GraphState):
     """
     print("🤖 Graph Node: Generating RAG Response...")
 
+    context = state.get("context", "")
+    print(f"📋 Context length: {len(context)} characters")
+    if not context or len(context.strip()) == 0:
+        print("⚠️ WARNING: Empty context! LLM will not have document information.")
+        return {
+            "messages": [
+                AIMessage(content="I cannot find that information in the documents.")
+            ]
+        }
+
     # Load Prompt from YAML
     system_template = prompt_manager.load_prompt("chat.yaml", "rag_system")
-    system_msg = system_template.format(
-        context=state.get("context", "No context found.")
-    )
+    system_msg = system_template.format(context=context)
+
+    print(f"📝 System prompt length: {len(system_msg)} characters")
+    print(f"💬 User query: {state.get('user_query', 'N/A')}")
 
     messages = [SystemMessage(content=system_msg)] + state["messages"]
 
     llm = llm_client.get_llm()
     response = llm.invoke(messages)
+
+    print(f"✅ LLM Response: {response.content[:100]}...")
 
     return {"messages": [response]}
 

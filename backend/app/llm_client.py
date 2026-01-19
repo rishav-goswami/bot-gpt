@@ -35,7 +35,7 @@ class LLMClient:
             self.llm = ChatGroq(
                 temperature=0.7,
                 groq_api_key=settings.GROQ_API_KEY,
-                model_name="llama3-70b-8192",
+                model_name="llama-3.3-70b-versatile",
             )
             print("Initialized Groq LLM Client.")
         elif provider == "ollama":

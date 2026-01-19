@@ -1,6 +1,6 @@
 from typing import List, Any, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status , Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -21,7 +21,7 @@ async def run_chat_graph(
     db: AsyncSession,
     chat: Conversation,
     user_content: str,
-    doc_ids: Optional[List[UUID]] = None,
+    doc_ids: Optional[List[str]] = None,
 ) -> Message:
     """
     Executes the LangGraph workflow.
@@ -122,12 +122,22 @@ async def list_conversations(
 
 @router.get("/{chat_id}", response_model=schemas.ConversationDetail)
 async def get_conversation(
-    chat_id: UUID, db: AsyncSession = Depends(deps.get_db)
+    chat_id: UUID,
+    db: AsyncSession = Depends(deps.get_db),
+    limit: int = Query(50, gt=0, le=100),  # Pagination: Default 50, Max 100
+    skip: int = Query(0, ge=0),
 ) -> Any:
-    chat = await crud.chat.get(db, conversation_id=chat_id)
-    if not chat:
+    """
+    Get conversation details with paginated messages and unique document list.
+    """
+    chat_details = await crud.chat.get_details(
+        db, conversation_id=chat_id, limit=limit, offset=skip
+    )
+
+    if not chat_details:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    return chat
+
+    return chat_details
 
 
 @router.post("/{chat_id}/messages", response_model=schemas.MessageResponse)
@@ -137,7 +147,7 @@ async def send_message(
     db: AsyncSession = Depends(deps.get_db),
 ) -> Any:
     # 1. Validate Chat
-    chat = await crud.chat.get(db, conversation_id=chat_id)
+    chat = await crud.chat.get_details(db, conversation_id=chat_id)
     if not chat:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -157,7 +167,7 @@ async def send_message(
     chat.messages.append(user_msg)
 
     # 4. Generate AI Reply using the helper
-    ai_msg = await run_chat_graph(db, chat, msg_in.content)
+    ai_msg = await run_chat_graph(db, chat, msg_in.content, doc_ids=msg_in.doc_ids)
 
     return ai_msg
 

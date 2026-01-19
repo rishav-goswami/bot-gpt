@@ -17,7 +17,10 @@ class MessageRole(str, Enum):
 class MessageBase(BaseModel):
     role: MessageRole
     content: str
-    metadata_: Optional[Dict[str, Any]] = Field(default=None, serialization_alias="metadata")
+    metadata_: Optional[Dict[str, Any]] = Field(
+        default=None, serialization_alias="metadata"
+    )
+
 
 # --- Message Schemas ---
 class MessageCreate(BaseModel):
@@ -27,7 +30,7 @@ class MessageCreate(BaseModel):
     # Role is usually 'user' by default in the API endpoint logic,
     # but we allow it here if needed (e.g. for system prompts).
     role: MessageRole = MessageRole.USER
-    doc_ids: Optional[List[UUID]] = None
+    doc_ids: Optional[List[str]] = None
 
 
 class MessageResponse(MessageBase):
@@ -38,6 +41,15 @@ class MessageResponse(MessageBase):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
+# Represents a File, not a chunk
+class DocumentFile(BaseModel):
+    filename: str
+    file_path: str
+    created_at: datetime
+    file_hash: Optional[str] = None
+    # No content_snippet, no embedding
+
+
 # --- Conversation Schemas ---
 class ChatCreate(BaseModel):
     """Payload to start a conversation"""
@@ -45,7 +57,7 @@ class ChatCreate(BaseModel):
     first_message: str = Field(..., min_length=1, example="Hello, how does RAG work?")
     # Optional: Attach a document ID immediately if 'Chat with PDF'
     # document_id: Optional[UUID] = None
-    doc_ids: Optional[List[UUID]] = None
+    doc_ids: Optional[List[str]] = None
 
 
 class ConversationBase(BaseModel):
@@ -62,10 +74,13 @@ class ConversationSummary(ConversationBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ConversationDetail(ConversationSummary):
-    """Full view for the chat window (includes messages)"""
+class ConversationDetail(BaseModel):
+    id: UUID
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    messages: List[MessageResponse]
+    documents: List[DocumentFile]  # List of unique files
 
-    messages: List[MessageResponse] = []
-    documents: List[DocumentResponse] = []
-
-    model_config = ConfigDict(from_attributes=True)
+    class Config:
+        from_attributes = True

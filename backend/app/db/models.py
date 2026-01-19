@@ -1,11 +1,11 @@
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from enum import Enum as PyEnum
 
 from sqlalchemy import String, ForeignKey, DateTime, Text, func, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID, JSONB, JSON
 from pgvector.sqlalchemy import Vector
 
 from app.db.base_class import Base
@@ -113,6 +113,11 @@ class Document(Base):
     content_snippet: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True
     )  # Text chunk content
+
+    # Stores flexible info like {"page": 1, "chunk_index": 5, "source": "report.pdf"}
+    doc_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON, nullable=True
+    )
 
     # Vector Embedding (1536 dims for OpenAI, 768 for HuggingFace/Llama)
     # Ensure you run 'CREATE EXTENSION vector;' in your DB migration!

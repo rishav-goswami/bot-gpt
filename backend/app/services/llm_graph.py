@@ -54,9 +54,7 @@ async def retrieve(state: GraphState):
     db = state["db_session"]
     chat_id = state["chat_id"]
 
-    # [NEW] Check for filter in the last message metadata or passed state
-    # For simplicity, let's assume we extract it from the last message payload
-    # (In a real app, you'd pass this via state explicitly)
+    
     filter_ids = state.get(
         "doc_ids", None
     )  # You need to add doc_ids to GraphState TypedDict
